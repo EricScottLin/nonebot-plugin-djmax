@@ -1,0 +1,23 @@
+# 出图素材不进仓库（约 56MB，且 Respect 字体是 DJMAX 游戏字体）。
+# 运行时由 qqbot_djmax.assets 从 CDN 下载，或通过 DJMAX_ASSETS_DIR 指向本地目录。
+fonts/
+**/assets/
+!**/assets/.gitkeep
+
+# 运行时数据
+covers/
+cache/
+data/
+*.json.tmp
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.so
+.DS_Store

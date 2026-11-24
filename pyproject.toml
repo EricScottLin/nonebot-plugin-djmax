@@ -1,0 +1,40 @@
+[project]
+name = "nonebot-plugin-djmax"
+version = "0.1.0"
+description = "NoneBot2 插件：DJMAX Respect V 查分（V-Archive），支持 B100、分表、单曲信息与单曲成绩"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "EricScottLin", email = "mr_ericlin@163.com" }]
+keywords = ["nonebot", "nonebot2", "djmax", "v-archive", "dg", "qq"]
+classifiers = [
+    "Framework :: NoneBot2",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "nonebot2>=2.2.0",
+    "nonebot-adapter-onebot>=2.4.0",
+    "httpx>=0.24.0",
+    "pillow>=9.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+localstore = ["nonebot-plugin-localstore>=0.7.0"]
+
+[project.urls]
+Homepage = "https://github.com/EricScottLin/nonebot-plugin-djmax"
+Repository = "https://github.com/EricScottLin/nonebot-plugin-djmax"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.nonebot]
+plugins = ["qqbot_djmax"]
+plugin_dirs = ["qqbot_djmax"]
+adapters = []
