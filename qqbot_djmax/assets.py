@@ -36,9 +36,27 @@ DEFAULT_ASSETS_URL = ""
 _REQUIRED_FONTS = ("Respect_bd.ttf", "Respect_rg.ttf", "Respect_lt.ttf")
 
 
+def _conf(name: str) -> str:
+    """读配置：环境变量优先，其次 NoneBot 的 .env 配置。
+
+    NoneBot 的 ``.env`` / ``.env.<env>`` 不会写进 ``os.environ``，
+    只出现在 ``driver.config`` 的 extra 字段里，所以两处都要看。
+    """
+    value = os.environ.get(name)
+    if value:
+        return value
+    try:
+        from nonebot import get_driver
+
+        extra = getattr(get_driver().config, "model_extra", None) or {}
+        found = extra.get(name.lower()) or getattr(get_driver().config, name.lower(), None)
+        return str(found) if found else ""
+    except Exception:
+        return ""
+
+
 def _data_root() -> Path:
-    env = os.environ.get("DJMAX_DATA_DIR")
-    if env:
+    if env := _conf("DJMAX_DATA_DIR"):
         return Path(env)
     try:
         from nonebot_plugin_localstore import get_plugin_data_dir
@@ -50,10 +68,8 @@ def _data_root() -> Path:
 
 def _candidate_roots() -> list[Path]:
     roots: list[Path] = []
-    for env_name in ("DJMAX_ASSETS_DIR",):
-        value = os.environ.get(env_name)
-        if value:
-            roots.append(Path(value))
+    if value := _conf("DJMAX_ASSETS_DIR"):
+        roots.append(Path(value))
     try:
         from .config import config
 
@@ -121,7 +137,7 @@ async def ensure_assets() -> Path:
     if ready is not None:
         return ready
 
-    url = os.environ.get("DJMAX_ASSETS_URL") or DEFAULT_ASSETS_URL
+    url = _conf("DJMAX_ASSETS_URL") or DEFAULT_ASSETS_URL
     if not url:
         raise RuntimeError(
             "未找到 DJMAX 出图素材。请设置环境变量 DJMAX_ASSETS_URL 指向素材包，"
