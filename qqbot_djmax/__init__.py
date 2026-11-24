@@ -40,9 +40,9 @@ dj pack 4 MX VC10        曲包分表
 dj new 4 MX              新曲分表
 dj pp 4                  Perfect Play 分表
 dj max 4                 理论值 B100
-dj info <歌曲>            单曲信息（全部键数定数）
-dj info 4B <歌曲>         只看 4B
-dj song 4B <歌曲>         单曲成绩
+dj song <歌曲>            曲目信息（全部键数定数）
+dj song 4B <歌曲>         只看 4B
+dj info 4B <歌曲>         单曲成绩
 dj listdlc               曲包代码列表""",
     homepage="https://github.com/YoisakiKnd/entari",
     config=Config,
@@ -62,10 +62,13 @@ CMD_HELP = "help"
 CMD_NEW = "new"
 CMD_PP = "pp"
 CMD_MAX = "max"
+CMD_SONG = "song"
 CMD_INFO = "info"
 
-_ALIAS_INFO = {CMD_INFO, "查歌", "查询", "曲目", "单曲"}
-_ALIAS_SCORE = {"score", "song", "成绩", "查分", "单曲成绩"}
+#: 曲目信息（封面/歌手/曲包/定数）：主名 song，其余为中文别名。
+_ALIAS_SONG = {CMD_SONG, "查歌", "曲目", "单曲信息"}
+#: 个人成绩：主名 info，其余为别名。
+_ALIAS_SCORE = {CMD_INFO, "score", "成绩", "查分", "单曲成绩", "查询"}
 _ALIAS_HELP = {CMD_HELP, "帮助", "help"}
 
 VALID_BMODES = set(BMODES)
@@ -94,9 +97,9 @@ def build_help_text() -> str:
         "  dj max 4                 理论值 B100\n"
         "  dj listdlc               曲包代码列表\n"
         "【单曲】\n"
-        "  dj info <歌曲>            曲目信息：全部键数定数\n"
-        "  dj info 4B <歌曲>         只看 4B\n"
-        "  dj song 4B <歌曲>         查你在该曲 4B 的成绩\n"
+        "  dj song <歌曲>            曲目信息：全部键数定数\n"
+        "  dj song 4B <歌曲>         只看 4B\n"
+        "  dj info 4B <歌曲>         查你在该曲 4B 的成绩\n"
         "  歌曲可以是曲名、歌手或 songid；未绑定时写 dj <ID> info <歌曲>\n"
         "提示：已绑定的 ID 可省略，例如 dj b100 4"
     )
@@ -219,8 +222,7 @@ async def _resolve_id(user_id: str, args: list[str]) -> tuple[str | None, int, s
 
 QUERY_KEYWORDS = {
     CMD_BESTS, CMD_LIST, CMD_PACK, CMD_NEW, CMD_PP, CMD_MAX,
-    CMD_INFO, "查歌", "查询", "曲目", "单曲",
-    "score", "song", "成绩", "查分", "单曲成绩",
+    *_ALIAS_SONG, *_ALIAS_SCORE,
 }
 
 
@@ -235,7 +237,7 @@ async def _send_image(matcher_or_bot, event: MessageEvent, image) -> None:
 # --- 命令实现 -----------------------------------------------------------------
 
 
-async def do_song_info(event: MessageEvent, query: str, bmode: int | None) -> None:
+async def do_song_card(event: MessageEvent, query: str, bmode: int | None) -> None:
     entry, hits = await _solve_song(query)
     if entry is None:
         if hits:
@@ -253,7 +255,7 @@ async def do_song_info(event: MessageEvent, query: str, bmode: int | None) -> No
     await djmax_matcher.send(MessageSegment.image(render.to_png(image)))
 
 
-async def do_song_score(event: MessageEvent, username: str, query: str, bmode: int) -> None:
+async def do_score_card(event: MessageEvent, username: str, query: str, bmode: int) -> None:
     entry, hits = await _solve_song(query)
     if entry is None:
         if hits:
@@ -293,7 +295,7 @@ async def _handle_single(event: MessageEvent, user_id: str, rest: list[str], *, 
     """``dj [ID] info|song [4B] <歌曲>``"""
     if not rest:
         await djmax_matcher.send(
-            "用法：dj info <歌曲> 或 dj info 4B <歌曲>；查自己成绩用 dj song 4B <歌曲>"
+            "用法：dj song <歌曲> 或 dj song 4B <歌曲>；查自己成绩用 dj info 4B <歌曲>"
         )
         return
 
@@ -308,15 +310,15 @@ async def _handle_single(event: MessageEvent, user_id: str, rest: list[str], *, 
 
     query = " ".join(tokens).strip()
     if not query:
-        await djmax_matcher.send("缺少歌曲名。例如：dj info Krush")
+        await djmax_matcher.send("缺少歌曲名。例如：dj song Krush")
         return
 
     if not is_score:
-        await do_song_info(event, query, bmode)
+        await do_song_card(event, query, bmode)
         return
 
     if bmode is None:
-        await djmax_matcher.send("查单曲成绩需要指定键数，例如：dj song 4B Krush")
+        await djmax_matcher.send("查单曲成绩需要指定键数，例如：dj info 4B Krush")
         return
 
     username = forced_id
@@ -327,7 +329,7 @@ async def _handle_single(event: MessageEvent, user_id: str, rest: list[str], *, 
                 err or "还没绑定 V-Archive ID。先发送 dj bind <ID>，或改用 dj <ID> song 4B <歌曲>。"
             )
             return
-    await do_song_score(event, username, query, bmode)
+    await do_score_card(event, username, query, bmode)
 
 
 @djmax_matcher.handle()
@@ -384,7 +386,7 @@ async def _run_command(event: MessageEvent) -> None:
         return
 
     # 单曲命令：dj [ID] info|song [4B] <歌曲>
-    if first in _ALIAS_INFO or first in _ALIAS_SCORE:
+    if first in _ALIAS_SONG or first in _ALIAS_SCORE:
         is_score = first in _ALIAS_SCORE
         await _handle_single(event, user_id, args[1:], is_score=is_score)
         return
@@ -400,7 +402,7 @@ async def _run_command(event: MessageEvent) -> None:
         return
 
     keyword = args[start_idx].lower()
-    if keyword in _ALIAS_INFO or keyword in _ALIAS_SCORE:
+    if keyword in _ALIAS_SONG or keyword in _ALIAS_SCORE:
         await _handle_single(
             event, user_id, args[start_idx + 1 :],
             is_score=keyword in _ALIAS_SCORE, forced_id=username,
