@@ -342,7 +342,9 @@ async def render_song_info(song: SongInfo) -> Image.Image:
 
 def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Image:
     rows = list(scores.scores)
-    head_h = 250
+    # 数据区从封面下方开始：封面占了 INFO_PAD ~ INFO_PAD+SCORE_COVER，
+    # 表头紧贴数据区上方，不能压到封面。
+    head_h = INFO_PAD + SCORE_COVER + 46
     row_h = 92
     height = head_h + max(1, len(rows)) * row_h + 96
 
@@ -391,11 +393,32 @@ def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Im
         fill=TEXT_FAINT,
     )
 
-    # 各难度一行
-    label_w = 250
-    col_diff = 130
-    col_score = 380
-    grid_top = head_h - 12
+    # 各难度一行；列宽固定，表头与数据行共用同一套坐标
+    col_diff_x = INFO_PAD + 6
+    col_level_x = INFO_PAD + 190
+    col_const_x = INFO_PAD + 340
+    col_score_x = INFO_PAD + 560
+    col_power_x = SCORE_WIDTH - INFO_PAD - 250
+    col_badge_x = SCORE_WIDTH - INFO_PAD - 30
+
+    # 表头：说明每列是什么
+    head_y = head_h - 58
+    head_font = _bd(22)
+    for text, x, anchor in (
+        ("难度", col_diff_x + 52, "mm"),
+        ("等级", col_level_x, "lm"),
+        ("定数", col_const_x, "lm"),
+        ("成绩", col_score_x, "lm"),
+        ("DJPower", col_power_x, "lm"),
+    ):
+        draw.text((x, head_y), text, font=head_font, fill=TEXT_FAINT, anchor=anchor)
+    draw.line(
+        (INFO_PAD - 6, head_y + 26, SCORE_WIDTH - INFO_PAD + 6, head_y + 26),
+        fill=PANEL_LINE,
+        width=2,
+    )
+
+    grid_top = head_h
     for row, item in enumerate(rows):
         y = grid_top + row * row_h
         if row % 2 == 0:
@@ -404,48 +427,58 @@ def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Im
 
         # 难度胶囊
         color = _diff_color(item.diff, float(item.constant))
-        pill_w, pill_h = col_diff - 20, 46
+        pill_w, pill_h = 104, 46
         draw.rounded_rectangle(
-            (INFO_PAD + 6, center_y - pill_h // 2, INFO_PAD + 6 + pill_w, center_y + pill_h // 2),
+            (col_diff_x, center_y - pill_h // 2, col_diff_x + pill_w, center_y + pill_h // 2),
             radius=6,
             fill=color if item.score is not None else PANEL,
         )
         draw.text(
-            (INFO_PAD + 6 + pill_w // 2, center_y),
+            (col_diff_x + pill_w // 2, center_y),
             item.diff,
             font=_bd(28),
             fill=(18, 18, 18) if item.score is not None else TEXT_FAINT,
             anchor="mm",
         )
 
-        # 定数
+        # 游戏内等级（1~15）
         draw.text(
-            (INFO_PAD + label_w, center_y),
-            f"{item.constant:g}",
-            font=_bd(34),
+            (col_level_x, center_y),
+            str(item.level),
+            font=_rg(30),
             fill=TEXT_DIM,
             anchor="lm",
         )
 
+        # 定数：没有定位时显示「—」，避免把等级误读成定数
+        if item.refined:
+            draw.text(
+                (col_const_x, center_y),
+                f"{item.constant:g}",
+                font=_bd(32),
+                fill=TEXT,
+                anchor="lm",
+            )
+        else:
+            draw.text((col_const_x, center_y), "—", font=_rg(30), fill=TEXT_FAINT, anchor="lm")
+
         # 分数
-        score_x = INFO_PAD + label_w + 110
         if item.score is None:
-            draw.text((score_x, center_y), "未游玩", font=_rg(32), fill=TEXT_FAINT, anchor="lm")
+            draw.text((col_score_x, center_y), "未游玩", font=_rg(32), fill=TEXT_FAINT, anchor="lm")
             continue
-        draw.text((score_x, center_y), f"{item.score:.2f}%", font=_bd(38), fill=TEXT, anchor="lm")
+        draw.text((col_score_x, center_y), f"{item.score:.2f}%", font=_bd(38), fill=TEXT, anchor="lm")
 
         # 状态徽章
-        badge_x = SCORE_WIDTH - INFO_PAD - 260
         if item.state:
             badge_color = ACCENT if item.state == "PP" else (255, 214, 102)
             bw = int(_bd(24).getlength(item.state)) + 28
             draw.rounded_rectangle(
-                (badge_x, center_y - 20, badge_x + bw, center_y + 20),
+                (col_badge_x - bw, center_y - 20, col_badge_x, center_y + 20),
                 radius=5,
                 fill=badge_color,
             )
             draw.text(
-                (badge_x + bw // 2, center_y),
+                (col_badge_x - bw // 2, center_y),
                 item.state,
                 font=_bd(24),
                 fill=(18, 18, 18),
@@ -455,21 +488,21 @@ def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Im
         # DJPower
         if item.djpower is not None:
             draw.text(
-                (SCORE_WIDTH - INFO_PAD, center_y),
+                (col_power_x, center_y),
                 f"{item.djpower:.4f}",
-                font=_bd(32),
+                font=_bd(30),
                 fill=ACCENT,
-                anchor="rm",
+                anchor="lm",
             )
 
     best = max((s.djpower for s in rows if s.djpower is not None), default=None)
-    footer = "定数与成绩来自 V-Archive"
+    footer = "等级为游戏内显示难度，定数为 V-Archive 非官方定数；「—」表示该谱面暂无定数"
     if best is not None:
         footer += f" · 本键数最高 DJPower {best:.4f}"
     draw.text(
         (INFO_PAD, height - 48),
         footer,
-        font=_rg(24),
+        font=_rg(22),
         fill=TEXT_FAINT,
         anchor="lm",
     )

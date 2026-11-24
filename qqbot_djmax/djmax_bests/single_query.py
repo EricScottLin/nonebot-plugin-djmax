@@ -58,6 +58,8 @@ class ChartScore:
     rating: Decimal | None = None
     max_rating: int | None = None
     updated_at: str | None = None
+    #: 该谱面是否已有 V-Archive 定数；没有时 ``constant`` 只是游戏内等级。
+    refined: bool = True
 
     @property
     def is_pp(self) -> bool:
@@ -191,6 +193,7 @@ async def fetch_song_scores(
                     rating=record.rating if record else None,
                     max_rating=record.max_rating if record else None,
                     updated_at=record.updated_at if record else None,
+                    refined=chart.is_refined,
                 )
             )
     song = build_song_info(entry, dlc_names, bmode=bmode)
