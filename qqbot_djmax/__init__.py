@@ -187,7 +187,7 @@ async def _song_index() -> tuple[song_index.SongIndex, dict[str, str]]:
 
 
 def _songid_hint(token: str | None) -> str | None:
-    """``441`` / ``#441`` 这类纯数字参数视为 songid 提示。"""
+    """``441`` / ``#441`` 这类纯数字参数视为 songid 提示；连带键数的整串也认。"""
     text = (token or "").strip().lstrip("#＃")
     return text if text.isdigit() else None
 
@@ -196,27 +196,31 @@ async def _solve_song(query: str,
                       hint: str | None = None) -> tuple[DMSongDBEntry | None, list[song_index.SongHit]]:
     """把用户输入解析成唯一曲目；无法确定时返回全部候选。
 
-    ``search`` 已经按 songid → 全等曲名 → 前缀 → 子串 → 歌手打分，
-    所以只要最高分明显领先（或曲名方与歌手方各只有一个全等）就可以直接采用；
-    只有真正有歧义时才让用户确认。``hint`` 用来在曲名全等与歌手全等各一个时
-    判断用户手里的是哪一种（例如 ``dj info 4B 441`` / ``dj info 4B Alone``）。
+    真正的判定规则在 ``song_index.resolve``：songid / 全等曲名 / 全等歌手优先，
+    只有前缀、子串这类模糊命中才看分差，并返回带优先级的候选列表。
+    ``hint`` 是用户顺手写的 songid（例如 ``dj info 4B 441``），用于同名消歧。
     """
     index, _ = await _song_index()
-    best = song_index.resolve(index, query, hint=hint)
-    if best is not None:
-        return best, [song_index.SongHit(best, 0)]
-    return None, index.search(query)
+    # 候选列表里显示成 "#441"，用户常连 # 一起抄回来，归一化时去掉。
+    query = query.strip().lstrip("#＃").strip()
+    result = song_index.resolve(index, query, hint=hint)
+    if result.entry is not None:
+        return result.entry, list(result.hits)
+    if len(result.hits) == 1:
+        # 前缀 / 歌手子串只命中一首时就是它，不必为难用户。
+        return result.hits[0].entry, list(result.hits)
+    return None, list(result.hits) or tuple(index.search(query))
 
 
-def _candidate_text(query: str, hits: list[song_index.SongHit],
-                    *, hint: str | None = None) -> str:
-    values = [str(h.entry.songid) for h in hits]
-    if hint and hint not in values:
-        values.insert(0, hint)
-    examples = "/".join(values[:3]) or "<songid>"
+def _candidate_text(query: str, hits: list[song_index.SongHit]) -> str:
+    # 候选里带 # 只是为了醒目；示意命令里一律用不带 # 的纯数字 songid。
+    first = hits[0].entry
+    sample = " / ".join(str(h.entry.songid) for h in hits[:2])
+    bmode_hint = "4B " if first.patterns.for_bmode(4) else ""
     lines = [
         f"「{query}」匹配到 {len(hits)} 首，无法确定是哪一首。",
-        f"请换用完整曲名、歌手，或直接写 songid（例如 songid {examples}）：",
+        f"请换用完整曲名，或把 songid 写在命令里（例如 songid {sample}，"
+        f"如 dj info {bmode_hint}{first.songid}）：",
     ]
     for hit in hits[:8]:
         entry = hit.entry
@@ -254,11 +258,10 @@ async def _send_image(matcher_or_bot, event: MessageEvent, image) -> None:
 
 async def do_song_card(event: MessageEvent, query: str, bmode: int | None,
                        hint: str | None = None) -> None:
-    query_hint = hint
-    entry, hits = await _solve_song(query, hint=query_hint)
+    entry, hits = await _solve_song(query, hint=hint)
     if entry is None:
         if hits:
-            await djmax_matcher.send(_candidate_text(query, hits, hint=query_hint))
+            await djmax_matcher.send(_candidate_text(query, hits))
         else:
             await djmax_matcher.send(f"没找到「{query}」。可以试试曲名的一部分，或直接写 songid。")
         return
@@ -274,11 +277,10 @@ async def do_song_card(event: MessageEvent, query: str, bmode: int | None,
 
 async def do_score_card(event: MessageEvent, username: str, query: str, bmode: int,
                         hint: str | None = None) -> None:
-    query_hint = hint
-    entry, hits = await _solve_song(query, hint=query_hint)
+    entry, hits = await _solve_song(query, hint=hint)
     if entry is None:
         if hits:
-            await djmax_matcher.send(_candidate_text(query, hits, hint=query_hint))
+            await djmax_matcher.send(_candidate_text(query, hits))
         else:
             await djmax_matcher.send(f"没找到「{query}」。可以试试曲名的一部分，或直接写 songid。")
         return
@@ -320,27 +322,28 @@ async def _handle_single(event: MessageEvent, user_id: str, rest: list[str], *, 
 
     bmode: int | None = None
     tokens = list(rest)
-    # 纯数字参数既可能是键数也可能是 songid：解析键数之前先记下来，
-    # 命中键数后 "dj info 4B 441" 里的数字才是 songid。
-    songid_hint = _songid_hint(tokens[0]) if tokens else None
-    if tokens and (first := _split_bmode_token(tokens[0])) is not None:
+    # 纯数字参数既可能是键数（4/5/6/8），也可能是 songid。
+    # 先认键数，剩下的部分才是曲名 / songid。
+    if (first := _split_bmode_token(tokens[0])) is not None:
         bmode = first
         tokens = tokens[1:]
-        songid_hint = _songid_hint(tokens[0]) if tokens else None
     elif len(tokens) > 1 and (last := _split_bmode_token(tokens[-1])) is not None:
         bmode = last
         tokens = tokens[:-1]
 
-    query = " ".join(tokens).strip()
-    # 只发了 "dj info 441"：这里没有键数，数字更可能是 songid，按 4B 查成绩更实用。
-    if not query and is_score and songid_hint is not None and songid_hint != "4":
-        query, bmode = songid_hint, 4
+    query = " ".join(tokens).strip().lstrip("#＃").strip()
+    # "dj info 4B 441"：键数之后紧跟的那个数字就是 songid，同名曲靠它消歧。
+    hint = _songid_hint(" ".join(tokens)) if bmode is not None else None
+    if not query and is_score and bmode in (None, 4) and hint is not None:
+        # "dj info 441"：songid 被写在了键数位置。这里没有曲名可查，再回一句
+        # "缺少键数"只会让人重发一次，直接按 4B 查该曲成绩更实用。
+        query, bmode = hint, 4
     if not query:
         await djmax_matcher.send("缺少歌曲名。例如：dj song Krush")
         return
 
     if not is_score:
-        await do_song_card(event, query, bmode, hint=songid_hint)
+        await do_song_card(event, query, bmode, hint=hint)
         return
 
     if bmode is None:
@@ -355,7 +358,7 @@ async def _handle_single(event: MessageEvent, user_id: str, rest: list[str], *, 
                 err or "还没绑定 V-Archive ID。先发送 dj bind <ID>，或改用 dj <ID> song 4B <歌曲>。"
             )
             return
-    await do_score_card(event, username, query, bmode, hint=songid_hint)
+    await do_score_card(event, username, query, bmode, hint=hint)
 
 
 @djmax_matcher.handle()
@@ -424,7 +427,10 @@ async def _run_command(event: MessageEvent) -> None:
     assert username is not None
 
     if start_idx >= len(args):
-        await djmax_matcher.send("参数还不够。B100 例子：dj b100 4；分表例子：dj list 4 15。")
+        await djmax_matcher.send(
+            "参数还不够。B100 例子：dj b100 4；分表例子：dj list 4 15；"
+            "查单曲例子：dj song 441 或 dj info 4B 441。"
+        )
         return
 
     keyword = args[start_idx].lower()
