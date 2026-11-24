@@ -397,7 +397,8 @@ def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Im
     col_diff_x = INFO_PAD + 6
     col_level_x = INFO_PAD + 190
     col_const_x = INFO_PAD + 340
-    col_score_x = INFO_PAD + 560
+    col_dev_x = INFO_PAD + 452
+    col_score_x = INFO_PAD + 620
     col_power_x = SCORE_WIDTH - INFO_PAD - 250
     col_badge_x = SCORE_WIDTH - INFO_PAD - 30
 
@@ -408,6 +409,7 @@ def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Im
         ("难度", col_diff_x + 52, "mm"),
         ("等级", col_level_x, "lm"),
         ("定数", col_const_x, "lm"),
+        ("偏差", col_dev_x, "lm"),
         ("成绩", col_score_x, "lm"),
         ("DJPower", col_power_x, "lm"),
     ):
@@ -462,6 +464,24 @@ def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Im
         else:
             draw.text((col_const_x, center_y), "—", font=_rg(30), fill=TEXT_FAINT, anchor="lm")
 
+        # 偏差：定数 - 等级，+ 表示比同等级平均难，- 表示简单。
+        # 只有 SC 有值（见 ChartScore.deviation），其余难度留空。
+        deviation = item.deviation
+        if deviation is not None:
+            if deviation > 0:
+                dev_color = (255, 138, 128)
+            elif deviation < 0:
+                dev_color = (130, 200, 255)
+            else:
+                dev_color = TEXT_DIM
+            draw.text(
+                (col_dev_x, center_y),
+                f"{deviation:+.1f}",
+                font=_bd(26),
+                fill=dev_color,
+                anchor="lm",
+            )
+
         # 分数
         if item.score is None:
             draw.text((col_score_x, center_y), "未游玩", font=_rg(32), fill=TEXT_FAINT, anchor="lm")
@@ -496,7 +516,7 @@ def _draw_scores_sync(scores: SongScores, cover: Image.Image | None) -> Image.Im
             )
 
     best = max((s.djpower for s in rows if s.djpower is not None), default=None)
-    footer = "等级为游戏内显示难度，定数为 V-Archive 非官方定数；「—」表示该谱面暂无定数"
+    footer = "偏差 = 定数 − 等级（+ 比同等级难，− 更简单）；仅 SC 谱面同标尺可比，NM/HD/MX 留空"
     if best is not None:
         footer += f" · 本键数最高 DJPower {best:.4f}"
     draw.text(

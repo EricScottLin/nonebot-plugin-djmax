@@ -122,3 +122,4 @@ if __name__ == "__main__":
                 mp.undo()
         print(f"  ok {check.__name__}")
     print("ok djmax assets resolution")
+

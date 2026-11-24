@@ -66,6 +66,18 @@ class ChartScore:
         return self.score is not None and self.score >= Decimal("100.00")
 
     @property
+    def deviation(self) -> Decimal | None:
+        """定数与等级的差，即这张谱面比同等级平均水平难多少（+）或简单多少（-）。
+
+        只有 SC 谱面的等级和定数是同一套标尺：实测 SC 的 ``定数 - 等级``
+        均值 +0.22、标准差 0.52，紧贴 0 分布。NM/HD/MX 游戏内用的是旧标尺，
+        差值系统性偏 -8 左右，减出来没有解读意义，因此返回 None。
+        """
+        if not self.refined or self.diff != "SC":
+            return None
+        return self.constant - Decimal(self.level)
+
+    @property
     def state(self) -> str:
         """PP / MC / 空。"""
         if self.score is None:
